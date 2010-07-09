@@ -1,6 +1,12 @@
 #!/usr/bin/python2
 
-# Copyright 2010 Funtoo Technologies and Daniel Robbins
+# Copyright 2010 Daniel Robbins, Funtoo Technologies, LLC.
+#
+# FUNTOO TECHNOLOGIES INTERNAL SOURCE CODE
+# ALPHA - DO NOT RELEASE - NOT FOR DISTRIBUTION
+#
+# The unauthorized reproduction or distribution of this copyrighted work is
+# illegal, and may result in civil or criminal liability.
 
 import os
 import subprocess
@@ -509,6 +515,27 @@ class PortageRepository(object):
 		return out
 
 	def getList(self,otype,qlist,recurse=True):
+
+		# getList() implements the generic recursive overlay lookup
+		# logic for returning a list of objects that match certain
+		# criteria.
+		#
+		# Typically, you'd use it like this:
+		#
+		# >>> repo.getList(CatPkg,["sys-apps","dev-lang"]) 
+		#
+		# (return list of CatPkgs in categories "sys-apps" and
+		# "dev-lang")
+		#
+		# >>> repo.getList(PkgAtom,[CatPkg("sys-apps/portage"),CatPkg("dev-lang/python")])
+		#
+		# (return list of PkgAtoms in CatPkgs "sys-apps/portage" and
+		# "dev-lang/python")
+		#
+		# getList accepts a query *list* rather than a single query so
+		# it can efficiently handle bulk queries. If you just want to
+		# query one thing, then pass it a single-item list.
+
 		atoms = set()
 		if recurse:
 			for overlay in self.atom_map[otype].overlays:
@@ -518,12 +545,26 @@ class PortageRepository(object):
 
 	def getRef(self,atom,recurse=True,**args):
 
-		# This is a handy method that, when given an ebuild PkgAtom, will
-		# return the path to the atom on disk, as well as the object
-		# reference to the PortageRepository that owns the atom. This
-		# method will look in the current repository, as well as any
-		# child repositories if recurse=True, which is the default
-		# setting. First argument is an PkgAtom() object.
+		# This is a handy method that, when given an Atom of some kind,
+		# will return a reference to it if it exists. Overlays are
+		# scanned recursively and the "right" match is found, meaning
+		# that if an overlay has the Atom then it will return the atom
+		# in the overlay.
+		#	
+		# A "reference" is actually a "RepositoryObjRef" object, which
+		# gives you all the info you need about the atom that was
+		# found. The ref contains a reference to the repository that
+		# owns the object, a reference to the object itself (PkgAtom,
+		# CatPkg, etc.), and path to the object relative to the object
+		# root.
+		#
+		# If the atom is not found, None is returned.
+		#
+		# Use it like this:
+		#
+		# print repo.getRef(PkgAtom("sys-apps/portage-2.2_rc67-r2"))
+		# print repo.getRef(EClassAtom("autotools")) print
+		# repo.getRef(CatPkg("sys-libs/glibc"))
 
 		if recurse:
 			for overlay in self.atom_map[type(atom)].overlays:
