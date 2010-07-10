@@ -576,7 +576,81 @@ class PortageRepository(object):
 				return RepositoryObjRef(self,atom,path)
 			else:
 				return None
-	
+
+	# In a classic Portage tree, the categories and ebuilds in the tree are
+	# used to define the authoritative contents of the tree, but when you
+	# want to access metadata inside an ebuild, a metadata cache is
+	# examined first. If the metadata cache data is fresh, internal ebuild
+	# data is pulled from the metadata cache. If the metdata cache is
+	# stale, it is freshened by running "ebuild.sh depend" (which sources
+	# the ebuild), and then new, fresh metadata is generated and stored in
+	# the cache, and this new metadata is then used. All metadata required
+	# for emerge to function properly exists in the metadata cache.
+
+	# So in the classic Portage tree implementation, there are two
+	# repositories that must be looked at - one, the Portage tree, to see
+	# what ebuilds exist, (and also to get profile and masking
+	# information), and another location, the metadata cache, to retrieve
+	# the metadata contents of the ebuild. If you need to actually run the
+	# ebuild, you look back at the Portage tree. While this is complicated,
+	# it allows users to modify ebuilds in their Portage tree and have them
+	# be used by Portage. It also adds complication to the distro side of
+	# things - new metadata must be generated, and injected into the Portage
+	# tree inside the metadata/ directory, so that after an emerge --sync,
+	# the user's metadata can be quickly updated.
+
+	# It may be useful to implement a new tree architecture, where a new
+	# type of Portage repository can exist that consists solely of
+	# metadata, plus profile and mask information. Then the metadata and
+	# Portage tree are unified in the sense that the metadata is always
+	# considered the authoritative source of what exists in the tree, and
+	# is also the authoritative source for ebuild metadata. Then, emerge
+	# can actually resolve dependencies without the need for ebuilds to be
+	# present! If an ebuild is needed (for merging,) it can be fetched from
+	# the Web just like a source file. Tarballs can be served from a Web
+	# service using a RESTful API. This may seem unusual, but fetching is
+	# already generally necessary for an ebuild to be compiled and merged
+	# as source files are typically not local.
+
+	# This model would dramatically reduce the size of the Portage tree,
+	# and simplify the Portage code base due to the fact that it is a 
+	# simpler and cleaner architecture. However, this new model of Portage
+	# tree would not allow ebuilds to be modified. In effect, this new
+	# Portage tree architecture would present an immutable tree, where
+	# the contents of the tree are fetched from a remote server. This
+	# differs from the classic behavior of allowing users to modify and
+	# add their own ebuilds.
+
+	# However, this does not mean that the new Portage tree architecture is
+	# a bad idea. First, many users are not interested in modifying
+	# ebuilds. For these users, the additional flexibility afforded by the
+	# current architecture offers no advantage. In addition, the small
+	# number of people who do need to locally modify or add ebuilds may be
+	# better served by using an overlay to accomplish this. Currently,
+	# overlays are not capable enough to allow all possible desired
+	# modifications to be achieved via an overlay - for example, I think it
+	# is currently impossible to say "look at my overlay for all sys-apps/
+	# portage packages, and *ignore* all ebuilds in the immutable tree upon
+	# which my overlay rests" - but as these functions are added to
+	# Portage, then the immutable tree concept becomes a possibility.
+
+	# The potential benefits of an immutable tree are significant:
+
+	# 2 to 12MB tree size rather than 150-300MB tree size
+	# 40-500 inodes rather than hundreds of thousands of inodes
+	# No need to synchronize metadata on users systems
+	# emerge sync traffic reduced by orders of magnitude.
+
+	# This would allow portage snapshots to be 2 to 12MB in size.
+	# emerge sync would be almost instantaneous.
+	# as the cache would always be fresh, "stale" metadata would not
+	# exist and this would result in significantly faster dependency
+	# calculations.
+
+	# This is a great benefit, but in order to implement, the overlay 
+	# model must be augmented to allow for local modification of Portage
+	# trees without difficulty.
+
 	def do(self,action,atom,env={}):
 		ref = self.getRef(atom)
 		if ref == None:
