@@ -201,6 +201,31 @@ class PkgAtom(object):
 		# the same key data.
 		return self.cpvs == other.cpvs and self.keys == other.keys
 
+class PkgAtomFilter(object):
+
+	# When we read package.mask, we create a bunch of PkgAtomFilters for each mask entry 
+	# we find. When the Portage tree is queried for "visible" packages, these PkgAtomFilters
+	# are used to reduce the set of packages returned.
+
+	# The workhorse method of the PkgAtomFilter is apply, which will return a set of visible
+	# and masked packages:
+
+	# >>> vis, masked = my.apply(asdlfkdsjf)
+
+	def __init__(self,depstring):
+		self.depstring = depstring
+
+	def apply(self,pkgatomset):
+		pass
+
+	@property
+	def cat(self):
+		return "foo"
+
+	@property
+	def p(self):
+		return "bar"
+
 class EClassAtom(object):
 
 	def __repr__(self):
@@ -687,3 +712,6 @@ print a.getRef(CatPkg("sys-libs/glibc"))
 print a.getList(CatPkg,["sys-apps","sys-libs"])
 print
 print a.getList(PkgAtom,[CatPkg("sys-apps/portage")])
+
+	
+
