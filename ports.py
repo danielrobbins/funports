@@ -703,6 +703,126 @@ class PortageRepository(object):
 		os.close(pr)
 		os.close(pw)
 
+
+class ConfigurationData(object):
+
+	# Things like make.conf, make.globals, etc. Like other data structures
+	# here, ConfigurationData can have children (cascading list)
+
+	# The configuration file format should be kept as simple as possible
+	# in order to keep the implementation as simple as possible, and 
+	# eventually the supported features should be documented in a specification.
+
+	def __init__(self, root):
+		self.root = root
+		self.data = None
+
+	def __getitem__(self,key):
+		if self.data == None:
+			self._read()
+		if self.data.has_key(key):
+			if self.data.find("${") == -1:
+				# no variables
+				return self.data[key]
+			else:
+				if self.child:
+					# if we have a child, recursively expand the variable
+					return self.child.expand(self.data[key])
+				else:
+					# if we don't, then the variable has no value and we
+					# convert the var references to "" and return the
+					# value
+					return self.nullify(self.data[key])
+		else:
+			return ""
+
+	def nullify(self,val):
+		
+
+	def keys(self):
+		if self.data == None:
+			self._read()
+		return self.data.keys()
+
+	def _read(self):
+		a = open(self.root,"r")
+		#extremely primitive yet hopefully effective.
+		self.data={}
+		for line in a.readlines():
+			if line[0] == "#":
+				# wimpy
+				continue
+			if len(line.strip()) == 0:
+				continue
+			eqsplit = line[:-1].split("=",1)
+			if len(eqsplit) != 2:
+				print "ERROR parsing data for '%s' in %s" % ( line[:-1], self.root)
+				continue
+			varname = eqsplit[0].strip()
+			vardata = eqsplit[1].strip()
+			if len(vardata) == 0:
+				print "ERROR vardata is blank for '%s' in %s" % (varname, self.root)
+			if len(vardata) >=2 and vardata[0] == '"' and vardata[-1] == '"':
+				vardata=vardata[1:-1]
+			self.data[varname] = vardata
+		a.close()
+				
+"""
+class PortageProfile(ConfigurationData):
+
+	# While the Portage profile is traditinally stored within the Portage
+	# repository, it makes sense to not impose this restriction on the 
+	# PortageProfile object. This PortageProfile object can exist anywhere
+	# on the filesystem.
+
+	def __init__(self, root):
+		self.root = root
+
+
+class DistributionRoot(object):
+
+	def __init__(self, root):
+		self.root = root
+		self._filtergroup = None
+
+	@property
+	def filterGroup(self):
+		if self._filtergroup == None:
+			b=UnmaskFilterGroup("/etc/portage/package.unmask")
+			a=MaskFilterGroup("/etc/portage/package.mask")
+			d=UnmaskFilterGroup("/usr/portage/profiles/package.unmask")
+			c=MaskFilterGroup("/usr/portage/profiles/package.mask")
+			# recurse into profile.....
+		self._filtergroup=MultiFilterGroup((b,a,d,c))
+		return self._filtergroup
+
+class PkgAtomFilter(object):
+
+	# Generic object
+
+class Level1PkgAtomFilter(object):
+
+	# Level1 means the filter can be applied based on version alone (no SLOT or other metadata)
+	# and does not require a repository reference. Faster and simpler.
+
+class Level2PkgAtomFilter(object):
+
+	# Level2 means the filter can be applied but requires accessing metadata and/or Distro root
+	# to look at distro-specific configuration. Slower and more complex.
+
+class FilterGroup(object):
+	
+	# a collection of filters, such as from a package.mask file. Can also be heirarchically linked
+	# with other filters.
+
+class MultiFilterGroup(object):
+
+class MaskFilterGroup(object):
+
+class UnmaskFilterGroup(object):
+
+"""
+
 a=PortageRepository("/usr/portage-gentoo")
 b=PortageRepository("/root/git/funtoo-overlay",overlay=True)
 a.overlays=[b]
@@ -712,6 +832,11 @@ print a.getRef(CatPkg("sys-libs/glibc"))
 print a.getList(CatPkg,["sys-apps","sys-libs"])
 print
 print a.getList(PkgAtom,[CatPkg("sys-apps/portage")])
-
-	
-
+z=ConfigurationData("/etc/make.conf")
+print
+print z.keys()
+for x in z.keys():
+	print z[x]
+y=ConfigurationData("/etc/make.globals")
+for x in y.keys():
+	print x,y[x]
