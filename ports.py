@@ -716,33 +716,82 @@ class ConfigurationData(object):
 	def __init__(self, root):
 		self.root = root
 		self.data = None
+		self.child = None
 
 	def __getitem__(self,key):
+		# this is a recursive method that is slow and ready to optimize.
 		if self.data == None:
 			self._read()
 		if self.data.has_key(key):
-			if self.data.find("${") == -1:
-				# no variables
-				return self.data[key]
-			else:
-				if self.child:
-					# if we have a child, recursively expand the variable
-					return self.child.expand(self.data[key])
-				else:
-					# if we don't, then the variable has no value and we
-					# convert the var references to "" and return the
-					# value
-					return self.nullify(self.data[key])
+			return self.data[key]
+		elif self.child and self.child.has_key(key):
+			return self.child[key]
 		else:
 			return ""
 
-	def nullify(self,val):
+	def getExpansion(self,rv):
+		# rv = the string that we're going to spit back in chunks:
+		#
+		# getExpansion("foo ${bar} oni ${rific}") would return something like this:
+		# [ "foo ", ["bar"], " oni ", ["rific"] 
+		# variable names are inside lists so they can be identified as such.
 		
-
-	def keys(self):
+		
+		# pos = current position we're at in the "rv" string
+		
+		pos = 0
+		while pos < len(rv):
+			found = rv.find("${",pos)
+			if found == -1:                            # NO "$" FOUND:
+				yield rv[pos:]                     # couldn't find a variable reference, add rest of string to output
+				pos = len(rv)                      # the outer loop will terminate due to pos == len(rv)
+				break
+			elif found > 0 and rv[found-1] == "\\":    # FOUND "${" BUT IT'S REALLY "\${":
+				yield rv[pos:found+2]              # a "\" in front means "do not expand", so output text up until now
+				pos = found+2                      # yield the "${" 
+				continue                           # keep looking for a *real* "${"
+			else:
+				if rv[pos:found] != "":            # FOUND a "${" - real beginning of variable:
+					yield rv[pos:found]        # yield text from last pos to right before "${"
+				found2 = rv.find("}",found+2)      # find the "}"
+				if found2 == -1:                   # if no "}", then that's a syntax error
+					# TODO: THROW EXCEPTION HERE
+					break
+				pos = found2 + 1                   # advance our position to right after the "}"
+				yield([rv[found+2:found2]])        # yield our variable name inside a list [] so we can easily identify it
+	
+	def keys(self,recurse=True):
+		keys = []
 		if self.data == None:
 			self._read()
-		return self.data.keys()
+		keys.extend(self.data.keys())
+		if recurse and self.child:
+			keys.extend(self.child.keys(),recurse)
+		return keys
+
+	def expand_var(self,vardata,stack=[],recurse=True):
+		out = ""
+		for part in self.getExpansion(vardata):
+			if type(part) == type([]):
+				varname = part[0]
+				if varname in self.data:
+					out += self.expand_var(self.data[varname],stack[:].append(varname))
+				elif recurse and self.child and self.child.has_key(varname):
+					out += self.expand_var(self.child[varname],stack[:].append(varname))
+				else:
+					continue
+			else:
+				out += part
+		return out
+		
+	def has_key(self,key,recurse=True):
+		if self.data == None:
+			self._read()
+		if self.data.has_key(key):
+			return True
+		elif recurse and self.child and self.child.has_key(key):
+			return True
+		return False
 
 	def _read(self):
 		a = open(self.root,"r")
@@ -760,11 +809,11 @@ class ConfigurationData(object):
 				continue
 			varname = eqsplit[0].strip()
 			vardata = eqsplit[1].strip()
-			if len(vardata) == 0:
-				print "ERROR vardata is blank for '%s' in %s" % (varname, self.root)
 			if len(vardata) >=2 and vardata[0] == '"' and vardata[-1] == '"':
 				vardata=vardata[1:-1]
-			self.data[varname] = vardata
+			print "raw '%s'" % vardata
+			self.data[varname] = self.expand_var(vardata)
+			print "set '%s' to '%s'" % ( varname , self.data[varname])
 		a.close()
 				
 """
@@ -838,5 +887,3 @@ print z.keys()
 for x in z.keys():
 	print z[x]
 y=ConfigurationData("/etc/make.globals")
-for x in y.keys():
-	print x,y[x]
