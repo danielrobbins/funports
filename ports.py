@@ -12,6 +12,7 @@ import os
 import subprocess
 import portage.versions
 import commands
+import regex
 from grp import getgrnam
 
 # This module implements a simplified mechanism to access the contents of a
@@ -728,38 +729,11 @@ class ConfigurationData(object):
 			return self.child[key]
 		else:
 			return ""
-
-	def getExpansion(self,rv):
-		# rv = the string that we're going to spit back in chunks:
-		#
-		# getExpansion("foo ${bar} oni ${rific}") would return something like this:
-		# [ "foo ", ["bar"], " oni ", ["rific"] 
-		# variable names are inside lists so they can be identified as such.
 		
+	_keychars = re.compile("[$\\\"]")
+	_valid_varname = re.compile("\A[a-zA-Z_]\w+$")
+	_valid_non_whitespace_vardata = re.compile("\A\S*$")
 		
-		# pos = current position we're at in the "rv" string
-		
-		pos = 0
-		while pos < len(rv):
-			found = rv.find("${",pos)
-			if found == -1:                            # NO "$" FOUND:
-				yield rv[pos:]                     # couldn't find a variable reference, add rest of string to output
-				pos = len(rv)                      # the outer loop will terminate due to pos == len(rv)
-				break
-			elif found > 0 and rv[found-1] == "\\":    # FOUND "${" BUT IT'S REALLY "\${":
-				yield rv[pos:found+2]              # a "\" in front means "do not expand", so output text up until now
-				pos = found+2                      # yield the "${" 
-				continue                           # keep looking for a *real* "${"
-			else:
-				if rv[pos:found] != "":            # FOUND a "${" - real beginning of variable:
-					yield rv[pos:found]        # yield text from last pos to right before "${"
-				found2 = rv.find("}",found+2)      # find the "}"
-				if found2 == -1:                   # if no "}", then that's a syntax error
-					# TODO: THROW EXCEPTION HERE
-					break
-				pos = found2 + 1                   # advance our position to right after the "}"
-				yield([rv[found+2:found2]])        # yield our variable name inside a list [] so we can easily identify it
-	
 	def keys(self,recurse=True):
 		keys = []
 		if self.data == None:
@@ -793,15 +767,179 @@ class ConfigurationData(object):
 			return True
 		return False
 
-	def _read(self):
+
+	def _read2(self):
+		valid_varname = re.compile("\A[a-zA-Z_]\w+$")
+		valid_non_whitespace_vardata = re.compile("\A\S*$")
+		#whitespace = re.compile("\A\w+$")
+
 		a = open(self.root,"r")
-		#extremely primitive yet hopefully effective.
-		self.data={}
-		for line in a.readlines():
-			if line[0] == "#":
-				# wimpy
+		self.data = {}
+		lines = a.readlines()
+		lpos = 0
+		while lpos < len(lines):
+			line = lines[lpos].lstrip()
+			if line == "\n":
 				continue
+			if line[0] == "#":
+				continue
+
+			equals = line.find("=")
+			if equals == -1:
+				# raise exception - no variable definition
+			
+			varname = line[0:equals]
+			vardata = line[equals+1:-1]
+
+			if valid_varname.match(varname) == None:
+				# raise exception - invalid variable name
+				print "invalid var name"
+				lpos += 1
+				continue
+
+			if equals + 2 == len(line):
+				# handle weird case where variable is "foo=\n", which means "foo=''"
+				self.data[varname] = ""
+				lpos += 1
+				continue
+
+			mode = None
+
+			if line[equals+1] == "'":
+				mode = "s"
+				# single quote variable start
+			elif line[equals+1] == '"':
+				mode = "d"
+				# double quote variable start
+			elif valid_non_whitespace_vardata.match(vardata):
+				# variable def is something like "foo=bar", without quotes. No spaces allowed here
+				self.data[varname] = vardata
+				lpos += 1
+				continue
+			else:
+				# raise exception, invalid data
+				print "invalid var def"
+				lpos += 1
+				continue
+
+			vardata=vardata[1:]
+
+			if mode == "s":
+				
+				# We are parsing a single-quoted variable -
+				# that means no backslash escaping at all, or
+				# variable expansion, and we just look for the
+				# terminating "'", which may not appear on the
+				# same line, as the following is valid for a
+				# shell variable:
+				#
+				# a='foo 
+				# bar 
+				# oni'
+				#
+				# (This is equivalent to "foo bar oni")
+				#
+				# No non-whitespace data should follow he
+				# closing "'" or an exception will be thrown.
+				# An exception will also be thrown if there is
+				# no terminating "'".
+				
+				# "accum" collects potentially multiple lines of
+				# input.
+
+				accum = ""
+
+				# look for trailing "'":
+
+				found = vardata.find("'")
+				while found == -1:
+
+					# look at successive lines until trailing "'" is found:
+
+					accum += vardata
+					lpos += 1
+					if lpos >= len(vardata):
+						# error, no end single quote, got to end of file
+						pass
+
+					# for new vardata, remove trailing newline and any whitespace on the left, prepend a " "
+					# this ensures that the 'foo bar oni' example above has one space between each word...
+
+					vardata = " " + lines[lpos][:-1].lstrip()
+
+					# keep looking...
+
+					found = vardata.find("'")
+
+				# the trailing "'" has been found:
+
+				enddata = vardata[found+1:]
+				accum += vardata[0:found]
+				
+				# whitespace *after* the trailing "'" is illegal:
+				
+				if len(enddata) and not enddata.iswhite():
+					# invalid characters found at end of variable definition, after "'"
+					pass
+
+				# we have collected all our data, save it, advance our position in the file, and continue:
+
+				self.data[varname] = accum
+				lpos +=1
+				continue
+
+			elif mode == "d":
+				
+				# We are parsing a double-quoted variable -
+				# This is significantly more complex than a
+				# single-quoted variable, because we must
+				# respect backslash-escaping (i.e. \\, \$, \")
+				# and also expand any variables referenced by
+				# $foo or ${foo}.
+				# 
+				# Like single-quote variables, we must handle
+				# the possibility of multi-line variables
+				# like this:
+				#
+				# a="foo
+				# bar
+				# oni"
+				#
+				# Similarly to single-quotes, no non-whitespace
+				# data should follow the closing '"' or an 
+				# exception will be thown, as will an exception
+				# be thrown if there is no trailing '"' in the
+				# file.
+				# 
+				# Of particular trickiness is the handling of the
+				# '\"' sequence - which means a literal '"' rather
+				# than "our variable data ends here." This is 
+				# tricky to handle correctly because while '\"'
+				# means "literal '"'", '\\"' means "backslash,
+				# then end of string" - so we can't just search
+				# for '"' and see if the prior character is a "\".
+				#
+				# To handle this, we have an "expand()" iterator
+				# that performs backslash expansion and returns
+				# chunks of the string at a time. If a variable
+				# reference is found, then a [varname] (variable
+				# name inside a list, so we can identify it) is
+				# returned.
+
+	def _read(self):
+
+		# The goal is to emulate shell behavior when parsing lines of files:
+
+
+		a = open(self.root,"r")
+		self.data={}
+		lines = a.readlines()
+		lpos =0
+		while lpos < len(lines):
+			line = lines[pos].lstrip()
 			if len(line.strip()) == 0:
+				continue
+			if line.lstrip()[0] == "#":
 				continue
 			eqsplit = line[:-1].split("=",1)
 			if len(eqsplit) != 2:
@@ -882,8 +1020,7 @@ print a.getList(CatPkg,["sys-apps","sys-libs"])
 print
 print a.getList(PkgAtom,[CatPkg("sys-apps/portage")])
 z=ConfigurationData("/etc/make.conf")
-print
-print z.keys()
-for x in z.keys():
-	print z[x]
 y=ConfigurationData("/etc/make.globals")
+z.child=y
+for key in y.keys():
+	print "%s: '%s'" % (key,y[key])
