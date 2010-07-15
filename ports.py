@@ -12,10 +12,11 @@
 # and easily managed:
 
 import os
-import subprocess
+
 import portage.versions
-import commands
-from grp import getgrnam
+
+import access
+
 
 # This module implements a simplified mechanism to access the contents of a
 # Portage tree. In addition, the PortageRepository class (see below) has
@@ -267,32 +268,6 @@ class PortageRepository(object):
 	def __repr__(self):
 		return "PortageRepository(%s)" % self.base_path
 
-	def grabfile(self,path):
-
-		# grabfile() is a simple helper method that grabs the contents
-		# of a typical portage configuration file, minus any lines
-		# beginning with "#", and returns each line as an item in a
-		# list. Newlines are stripped. This helper function looks at
-		# the repository base_path, not any overlays.  If a directory
-		# is specified, the contents of the directory are concatenated
-		# and returned.
-
-		out=[]	
-		if not self.access.exists(path):
-			return out
-		if self.access.isdir(path):
-			scan = self.access.listdir(path)
-			scan = map(lambda(x): "%s/%s" % ( path, x ), scan )
-		else:
-			scan = [ path ]
-		for path in scan:
-			a=self.access.open(path,"r")
-			for line in a.readlines():
-				if len(line) and line[0] != "#":
-					out.append(line[:-1])
-			a.close()
-		return out
-
 	# The self._has_*() and self._*_list() methods below are used to query
 	# the Portage repository. If you want to change the structure of the
 	# Portage repository, you would override these methods in a subclass,
@@ -369,7 +344,7 @@ class PortageRepository(object):
 		# "listdir", "exists", "is_dir", etc. should go through
 		# self.access to allow retargetable storage back-ends.
 
-		self.access = FileAccessInterface(self.base_path)
+		self.access = access.FileAccessInterface(self.base_path)
 
 		self.path = {
 			"eclass_dir" : "eclass",
@@ -507,7 +482,7 @@ class PortageRepository(object):
 		# -- useful for categories, info_pkgs, and info_vars,
 		# but probably not what you want for package.mask :)
 
-		out = set(self.grabfile(path))
+		out = set(self.access.grabfile(path))
 		if recurse:
 			for overlay in self.overlays:
 				out = out | overlay.__grabset__(path)
@@ -649,46 +624,15 @@ class PortageRepository(object):
 	# This is a great benefit, but in order to implement, the overlay 
 	# model must be augmented to allow for local modification of Portage
 	# trees without difficulty.
-
-	def do(self,action,atom,env={}):
-		ref = self.getRef(atom)
-		if ref == None:
-			return None
-		master_env = {
-			"PORTAGE_TMPDIR" : "/var/tmp/portage",
-			"EBUILD" : ref.repo.access.diskpath(ref.path),
-			"EBUILD_PHASE" : action,
-			"ECLASSDIR" : self.access.diskpath(self.path["eclass_dir"]),
-			"PORTDIR" : self.access.base_path,
-			"PORTDIR_OVERLAY" : " ".join(self.overlays),
-			"PORTAGE_GID" : repr(getgrnam("portage")[2]),
-			"CATEGORY" : atom.cat,
-			"PF" : atom.pf,
-			"P" : atom.p,
-			"PV" : atom.pv
-		} 
-		master_env.update(env)	
-		pr, pw = os.pipe()
-		a = os.dup(pw)
-		os.dup2(a,9)
-		p = subprocess.call(["/usr/lib/portage/bin/ebuild.sh",action],env=master_env,close_fds=False)
-		a = os.read(pr, 100000)
-		print a.split("\n")
-		os.close(pr)
-		os.close(pw)
-
 				
-"""
-
-"""
-
-a=PortageRepository("/usr/portage-gentoo")
-b=PortageRepository("/root/git/funtoo-overlay",overlay=True)
-a.overlays=[b]
-print a.getRef(PkgAtom("sys-apps/portage-2.2_rc67-r2"))
-print a.getRef(EClassAtom("autotools"))
-print a.getRef(CatPkg("sys-libs/glibc"))
-print a.getList(CatPkg,["sys-apps","sys-libs"])
-print
-print a.getList(PkgAtom,[CatPkg("sys-apps/portage")])
+if __name__ == "__main__":
+	a=PortageRepository("/var/git/portage-mini-2010")
+	b=PortageRepository("/root/git/funtoo-overlay",overlay=True)
+	a.overlays=[b]
+	print a.getRef(PkgAtom("sys-apps/portage-2.2_rc67-r2"))
+	print a.getRef(EClassAtom("autotools"))
+	print a.getRef(CatPkg("sys-libs/glibc"))
+	print a.getList(CatPkg,["sys-apps","sys-libs"])
+	print
+	print a.getList(PkgAtom,[CatPkg("sys-apps/portage")])
 

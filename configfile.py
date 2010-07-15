@@ -187,7 +187,7 @@ class ConfigFile(object):
 			
 			if line[equals:equals+2] != '="':
 				# single line variable with no quotes
-				self.data[varname] = self.expand_var(line[equals+2:])
+				self.data[varname] = self.expand_var(line[equals+1:])
 				lpos += 1
 				continue
 			
@@ -202,7 +202,9 @@ class ConfigFile(object):
 			accum = ""
 			while vardata.rstrip()[-1] != '"':
 				# look at successive lines until trailing "'" is found:
-
+				# trailing backslash support:
+				if vardata[-1] == "\\":
+					vardata = vardata[:-1]
 				accum += vardata
 				lpos += 1
 				if lpos >= len(lines):
@@ -222,7 +224,8 @@ class ConfigFile(object):
 			lpos +=1
 			continue
 
-z=ConfigFile("/usr/share/portage/config/make.globals")
-a=ConfigFile("/etc/make.conf", parent=z)
-for key in a.keys():
-	print "%s: '%s'" % (key,a[key])
+if __name__ == "__main__":
+	z=ConfigFile("/usr/share/portage/config/make.globals")
+	a=ConfigFile("/etc/make.conf", parent=z)
+	for key in a.keys():
+		print "%s: '%s'" % (key,a[key])
