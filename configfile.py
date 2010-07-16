@@ -12,6 +12,12 @@ import re
 
 class ConfigFile(object):
 
+	def __repr__(self):
+		if self.parent:
+			return "ConfigFile(%s,parent=%s)" % ( self.root, self.parent.root )
+		else:
+			return "ConfigFile(%s)" % self.root
+
 	# This class implements a parser and class for a Portage-style configuration
 	# file.
 	#
@@ -153,7 +159,16 @@ class ConfigFile(object):
 			else:
 				out += part
 		return out
-		
+	
+	def __contains__(self,key):
+		if self.data == None:
+			self._read()
+		if self.data.has_key(key):
+			return True
+		elif self.parent and self.parent.has_key(key):
+			return True
+		return False
+
 	def has_key(self,key,recurse=True):
 		if self.data == None:
 			self._read()
@@ -162,7 +177,6 @@ class ConfigFile(object):
 		elif recurse and self.parent and self.parent.has_key(key):
 			return True
 		return False
-
 
 	def _read(self):
 
