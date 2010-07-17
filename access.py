@@ -54,6 +54,18 @@ class FileAccessInterface(object):
 			a.close()
 		return out
 
+	def collapse_files(self,files):
+		pass
+		out = {}
+		for file in files:
+			if self.exists(file):
+				f=self.open(file,"r")	
+				for line in f.readlines():
+					items = line.split()
+					if len(items) and item[0][0] != "#":
+						out[item[0]] = items[1:]
+				f.close()
+		return out
 
 class GitAccessInterface(FileAccessInterface):
 

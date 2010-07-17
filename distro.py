@@ -133,7 +133,7 @@ class DistroAdapter(object):
 			# children, including cascading profile make.defaults
 			# files...
 
-			cfglist = self.profile.defaults
+			cfglist = self.profile["make.defaults"] #returns list of files from cascaded profile
 			cfglist.append(os.path.normpath("%s/%s" % (self.root, "/etc/make.conf")))
 
 			# Create a stack of ConfigFile objects, each pointing
