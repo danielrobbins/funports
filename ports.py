@@ -266,7 +266,7 @@ class PortageRepository(object):
 	# mechanisms.
 
 	def __repr__(self):
-		return "PortageRepository(%s)" % self.base_path
+		return "PortageRepository(%s)" % self.base_path.diskpath
 
 	# The self._has_*() and self._*_list() methods below are used to query
 	# the Portage repository. If you want to change the structure of the
@@ -344,7 +344,7 @@ class PortageRepository(object):
 		# "listdir", "exists", "is_dir", etc. should go through
 		# self.access to allow retargetable storage back-ends.
 
-		self.access = access.FileAccessInterface(self.base_path)
+		self.access = access.FileAccessInterface(self.base_path.diskpath)
 
 		self.path = {
 			"eclass_dir" : "eclass",

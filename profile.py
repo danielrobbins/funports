@@ -1,5 +1,5 @@
 import os
-from access import FileAccessInterface
+from access import *
 
 class PortageProfile(object):
 
@@ -9,7 +9,7 @@ class PortageProfile(object):
 	# on the filesystem.
 
 	def __repr__(self):
-		return "PortageProfile(%s)" % self.profile_path
+		return "PortageProfile(%s)" % self.path
 
 	def __init__(self, path):
 		# self.path is a FilePath object (defined in access.py).
@@ -18,7 +18,7 @@ class PortageProfile(object):
 		# self.path.diskpath would point to "/usr/portage/profiles/default/linux/x86/2008.0".
 		
 		self.path = path
-		self.access = FileAccessInterface(self.base_path)
+		self.access = FileAccessInterface(self.path.base_path)
 		self._cascaded_items = {}
 		
 		self.parents = [ ]
@@ -26,7 +26,7 @@ class PortageProfile(object):
 		if self.access.exists(parent):
 			entries = self.access.grabfile(parent)
 			for entry in entries:
-				self.parents.append(PortageProfile(self.path.adjpath(entry))
+				self.parents.append(PortageProfile(self.path.adjpath(entry)))
 
 	def __getitem__(self,path):
 		if path in self._cascaded_items:
@@ -51,7 +51,7 @@ class PortageProfile(object):
 				parent_items = parent[filename]
 				if parent_items != None:
 					found.extend(parent_items)
-			myf = self.path.adjpath("%s/%s" % ( self.profile_path, filename )
+			myf = self.path.adjpath(filename)
 			if self.access.exists(myf):
 				found.append(myf)
 			self._cascaded_items[filename] = found
@@ -63,6 +63,14 @@ class PortageProfile(object):
 		return self.access.collapse_files(virts)
 
 if __name__ == "__main__":
-	a=PortageProfile("/var/git/portage-mini-2010/profiles","default/linux/amd64/2008.0")
+	a=PortageProfile(FilePath("default/linux/amd64/2008.0",base_path="/var/git/portage-mini-2010/profiles"))
+	print "PROFILE PARENTS"
+	print "==============="
+	print
 	print a.parents
+	print
+	print "make.defaults"
+	print "============="
+	print
 	print a["make.defaults"]
+	print

@@ -14,9 +14,9 @@ class ConfigFile(object):
 
 	def __repr__(self):
 		if self.parent:
-			return "ConfigFile(%s,parent=%s)" % ( self.root, self.parent.root )
+			return "ConfigFile(%s,parent=%s)" % ( self.path.diskpath, self.parent.path.diskpath )
 		else:
-			return "ConfigFile(%s)" % self.root
+			return "ConfigFile(%s)" % self.path.diskpath
 
 	# This class implements a parser and class for a Portage-style configuration
 	# file.
@@ -63,8 +63,8 @@ class ConfigFile(object):
 	# in order to keep the implementation as simple as possible. Shell format
 	# sucks, so it doesn't make sense to go crazy here.
 
-	def __init__(self, root, parent=None):
-		self.root = root
+	def __init__(self, path, parent=None):
+		self.path = path
 		self.data = None
 		self.parent = parent
 
@@ -180,7 +180,7 @@ class ConfigFile(object):
 
 	def _read(self):
 
-		a = open(self.root,"r")
+		a = open(self.path.diskpath,"r")
 		lines = a.readlines()
 		a.close()
 		
@@ -239,7 +239,8 @@ class ConfigFile(object):
 			continue
 
 if __name__ == "__main__":
-	z=ConfigFile("/usr/share/portage/config/make.globals")
-	a=ConfigFile("/etc/make.conf", parent=z)
+	from access import *
+	z=ConfigFile(FilePath("/usr/share/portage/config/make.globals"))
+	a=ConfigFile(FilePath("/etc/make.conf"), parent=z)
 	for key in a.keys():
 		print "%s: '%s'" % (key,a[key])

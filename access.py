@@ -14,7 +14,7 @@ class FilePath(object):
 		return hash(self.diskpath)
 
 	def __repr__(self):
-		return "FilePath(%s,%s)" % ( self.base_path, self.path )
+		return "FilePath(base_path=%s,%s)" % ( self.base_path, self.path )
 
 	@property
 	def path(self):
@@ -33,7 +33,21 @@ class FilePath(object):
 
 	@property
 	def diskpath(self):
-		return os.path.normpath(os.path.join(self.base_path,self.path))
+		return os.path.normpath("%s/%s" % ( self.base_path,self.path))
+
+	def follow(self):
+		if not os.path.issym(self.diskpath):
+			return self
+		else:
+			return self.adjpath("..").adjpath(os.readlink(self.diskpath))
+			
+	def rebase(self,dir):
+		found = self.diskpath.find("/%s/" % dir)
+		if found == 0:
+			return self
+		else:
+			return FilePath(self.diskpath[found:],base_path=self.diskpath[0:found])
+
 
 	def adjpath(self,change):
 

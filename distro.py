@@ -22,12 +22,9 @@ class DistroAdapter(object):
 	# DistroAdapter will take care of caching where possible to reduce IO and
 	# computation when querying the tree.
 
-	def __init__(self,root):
+	def __init__(self,path):
 
-		self.root = os.path.normpath(root)
-		if self.root[-1] != "/":
-			self.root = self.root + "/"
-
+		self.path = path
 		self._global_config = None
 		self._general_config = None
 		self._complete_config = None
@@ -43,7 +40,7 @@ class DistroAdapter(object):
 		# filesystem.
 
 		if self._portdir == None:
-			self._portdir = PortageRepository(os.path.normpath("%s/%s" % (self.root, self.general_config["PORTDIR"])))
+			self._portdir = PortageRepository(self.path.adjpath(self.general_config["PORTDIR"]))
 		return self._portdir
 
 	@property
@@ -60,8 +57,10 @@ class DistroAdapter(object):
 				# with PROFILE set to something like "default/linux/amd64/2008.0". The profile is assumed
 				# to be relative to the profile root of "PORTDIR/profiles"
 
-				profroot = os.path.normpath("%s/%s/profiles" % (self.root, self.general_config["PORTDIR"]))
-				profname = self.general_config["PROFILE"]
+				profpath = FilePath(
+					self.general_config["PROFILE"],
+					base_path=self.path.adjpath(self.general_config["PORTDIR"]).adjpath("profiles").diskpath
+				)
 
 			else:
 				# This is the traditional way to set the Portage profile - an /etc/make.profile symlink.
@@ -70,12 +69,10 @@ class DistroAdapter(object):
 				# right after the "profiles/" - the first part is the path to the profile root, the
 				# second part is the path (relative to the profile root) to the profile.
 
-				proftemp = os.path.normpath("%setc/%s" %  ( self.root, os.readlink("%s/etc/make.profile" % self.root )))
-				splitter = proftemp.find("profiles/") + len("profiles/")
-				profroot = os.path.realpath(proftemp[0:splitter])
-				profname = proftemp[splitter:]
+				profpath = self.path.adjpath("/etc/make.profile").follow()
+				profpath = profpath.rebase("profiles")
 
-			self._profile = PortageProfile(profroot,profname)
+			self._profile = PortageProfile(profpath)
 
 		return self._profile
 
@@ -102,7 +99,7 @@ class DistroAdapter(object):
 
 
 		if self._global_config == None:
-			self._global_config = ConfigFile(os.path.normpath("%s/%s" % ( self.root, "/etc/make.globals" )))
+			self._global_config = ConfigFile(self.path.adjpath("/etc/make.globals"))
 		return self._global_config
 
 
@@ -114,7 +111,7 @@ class DistroAdapter(object):
 		# that are not profile-specific.
 	
 		if self._general_config == None:
-			self._general_config = ConfigFile(os.path.normpath("%s/%s" % ( self.root, "/etc/make.conf" )), parent=self.global_config)
+			self._general_config = ConfigFile(self.path.adjpath("/etc/make.conf"), parent=self.global_config)
 		return self._general_config
 
 	@property
@@ -134,7 +131,7 @@ class DistroAdapter(object):
 			# files...
 
 			cfglist = self.profile["make.defaults"] #returns list of files from cascaded profile
-			cfglist.append(os.path.normpath("%s/%s" % (self.root, "/etc/make.conf")))
+			cfglist.append(self.path.adjpath("/etc/make.conf"))
 
 			# Create a stack of ConfigFile objects, each pointing
 			# to the previous, with "/etc/make.conf" at top, and
@@ -142,8 +139,8 @@ class DistroAdapter(object):
 			# bottom:
 
 			stack = self.global_config
-			for cfname in cfglist:
-				stack = ConfigFile(cfname, parent=stack)
+			for cfpath in cfglist:
+				stack = ConfigFile(cfpath, parent=stack)
 
 			# Set self._complete_config to the top of stack (the
 			# one referencing "/etc/make.conf") - the others are
@@ -156,11 +153,13 @@ class DistroAdapter(object):
 
 if __name__ == "__main__":
 
+	from access import *
+
 	print "COMPLETE CONFIGURATION"
 	print "======================"
 	print
 
-	a=DistroAdapter("/")
+	a=DistroAdapter(FilePath("",base_path="/"))
 	for key in a.complete_config.keys():
 		print "%s: '%s'" % (key, a.complete_config[key])
 	print
