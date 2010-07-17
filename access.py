@@ -1,34 +1,73 @@
 import os
 import commands
 
+class FilePath(object):
+
+	def __init__(self,path,base_path="/"):
+		self._path = path
+		self._base_path = base_path
+
+	def __eq__(self,other):
+		return self.diskpath == other.diskpath
+
+	def __hash__(self):
+		return hash(self.diskpath)
+
+	def __repr__(self):
+		return "FilePath(%s,%s)" % ( self.base_path, self.path )
+
+	@property
+	def path(self):
+		return self._path
+
+	@path.setter
+	def path(self,value):
+		return FilePath(value,base_path=self.base_path)
+
+	@property
+	def base_path(self):
+		return self._base_path
+
+	def __add__(self,other):
+		return FilePath(os.path.join(self.path,other),base_path=self.base_path)
+
+	@property
+	def diskpath(self):
+		return os.path.normpath(os.path.join(self.base_path,self.path))
+
+	def adjpath(self,change):
+
+		# This returns a new path -
+		# foo.adjpath("..") would return the previous directory.
+		# foo.adjpath("foo") would return a path to the current path plus "/foo"
+		# foo.adjpath("/foo") would return an absolute path "/foo.
+		# The path root for the new path is the same as this path.
+
+		if os.path.isabs(change):
+			return FilePath(change,base_path=self.base_path)
+		else:
+			return FilePath(os.path.normpath(os.path.join(self.path, change)),base_path=self.base_path)
+
+
 class FileAccessInterface(object):
 
 	def __init__(self,base_path):
 		self.base_path = os.path.realpath(base_path)
 	
-	def open(self,file, mode):
-		return open("%s/%s" % ( self.base_path, file ), mode)
+	def open(self,path, mode):
+		return open(path.diskpath, mode)
 
 	def listdir(self,path):
-		return os.listdir(os.path.normpath("%s/%s" % ( self.base_path, path ) ))
+		return os.listdir(path.diskpath)
 
 	def exists(self,path):
-		return os.path.exists("%s/%s" % ( self.base_path, path ))
+		return os.path.exists(path.diskpath)
 
 	def isdir(self,path):
-		return os.path.isdir("%s/%s" % ( self.base_path, path ))
+		return os.path.isdir(path.diskpath)
 
 	def diskpath(self,path):
-		return os.path.normpath("%s/%s" % ( self.base_path, path ))
-
-	def adjpath(self,root,change):
-		# if change is an absolute path, return change
-		# if change is relative path, return new change path relative
-		# to "root" (typically "current directory")
-		if os.path.isabs(change):
-			return change
-		else:
-			return os.path.normpath(os.path.join(root, change))
+		return os.path.normpath(path.diskpath)
 
 	def grabfile(self,path):
 		# grabfile() is a simple helper method that grabs the contents
@@ -54,10 +93,10 @@ class FileAccessInterface(object):
 			a.close()
 		return out
 
-	def collapse_files(self,files):
+	def collapse_files(self,paths):
 		pass
 		out = {}
-		for file in files:
+		for file in paths:
 			if self.exists(file):
 				f=self.open(file,"r")	
 				for line in f.readlines():
@@ -107,3 +146,10 @@ from grp import getgrnam
 		os.close(pr)
 		os.close(pw)
 """
+
+if __name__ == "__main__":
+	a=FilePath("/foo/bar")
+	print a
+	print a + "/oni"
+	print a
+	print a + "oni"
