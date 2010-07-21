@@ -1,0 +1,112 @@
+break-down
+==========
+
+best approach is to bundle index+essentials:
+3.7MB, 688KB xz compressed.
+
+Then, add standard sqlite bundle, necessary for emerge -s and --fetchonly
+6.2MB, 868KB xz compressed
+
+Then, add metadata.xml sqlite bundle:
+4.4MB, 600KB xz compressed
+
+Then, add ChangeLogs via web api to avoid having to refresh:
+61MB, 7MB xz compressed
+
+=============================================================
+
+The problem is that downloading the SQLite bundle over and over
+again is wasteful, so ideally you would only need to download
+any changes and then re-populate the db.
+
+For this reason, it makes sense to have the canonical storage
+format be a filesystem tree. Maybe I could write a wimpy version
+of git, with no local history, that stored packed stuff in a
+tree. with sha1's on both sides, the update could be performed
+quickly and efficiently, transferring only the changed portions
+in a compressed format. On the remote end, the data would be
+decompressed and applied to the metadata and the sqlite data
+would be updated this way.
+
+Using this mechanism, the average rsync could be 10KB or less
+of traffic. A full tree grab would be almost instantaneous
+(688KB). This would be a level of traffic that could be
+handled by a web service. The web service would serve as the
+rsync server. This would also solve the problem of requiring
+git tree history to be wiped annually - this wouldn't be
+required anymore as no history would be stored on the client
+side.
+
+index
+=====
+
+Any database will need to have a list of the ebuilds to which
+the data corresponds - The ebuild names themselves take up a
+certain amount of data:
+
+1204KB, 204KB gzip compressed, 160KB xz compressed
+
+essential local metadata (required by software to function)
+===========================================================
+
+2.5MB, 900K gz compressed, 528K xz compressed
+
+DEPEND:1
+RDEPEND:2
+PDEPEND:13
+LICENSE:7
+EAPI:15
+IUSE:11
+KEYWORDS:9
+LICENSE:7
+PROVIDE:14
+SLOT:3
+
+required if you want fetching to be able to work without bundle
+===============================================================
+
+2.7MB, 420K gz compressed, 328K xz compressed
+
+could be added to a separate sqlite db
+
+RESTRICT:5 - fetch restriction
+SRC_URI:4 - having this local is probably necessary for --fetchonly to work? - probably best
+
+nice-to-have-local metadata
+===========================
+
+could be added to a separate sqlite db
+
+DESC - 1.3MB, 296K gz compressed, 244K xz compressed 
+HOME - 965K, 164K gz compressed, 136K xz compressed
+
+DESCRIPTION:8
+HOMEPAGE:6
+
+even more metadata
+==================
+
+metadata.xml: 4.2MB, 640KB gz compressed, 464KB xz compressed
+ChangeLogs: 61MB, 12MB gz compressed, 7MB xz compressed
+
+This stuff isn't really considered "metadata" by Portage yet it is technically
+metadata in the sense that it's data about the ebuild or package:
+
+stuff from metadata.xml: - more JSON-friendly (record any goodies you want)
+	maintainer
+	herd
+	bugs-to
+	long description
+	local use description
+ChangeLogs
+
+internal-use build metadata - not fun for users, not needed locally - can be
+bundled
+===================================================================
+
+This metadata could travel with the bundle.
+
+DEFINED_PHASES:17
+PROPERTIES:16 - only interactive is supported
+ECLASS:10 - would be needed for creating a bundle
+

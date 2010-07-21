@@ -18,13 +18,12 @@ class PortageProfile(object):
 		# self.path.diskpath would point to "/usr/portage/profiles/default/linux/x86/2008.0".
 		
 		self.path = path
-		self.access = FileAccessInterface(self.path.base_path)
 		self._cascaded_items = {}
 		
 		self.parents = [ ]
 		parent = self.path.adjpath("parent")
-		if self.access.exists(parent):
-			entries = self.access.grabfile(parent)
+		if parent.exists():
+			entries = parent.grabfile()
 			for entry in entries:
 				self.parents.append(PortageProfile(self.path.adjpath(entry)))
 
@@ -52,15 +51,15 @@ class PortageProfile(object):
 				if parent_items != None:
 					found.extend(parent_items)
 			myf = self.path.adjpath(filename)
-			if self.access.exists(myf):
+			if myf.exists():
 				found.append(myf)
 			self._cascaded_items[filename] = found
 		return self._cascaded_items[filename]
 
-	@property
-	def virtuals(self):
-		virts = self._cascade("virtuals")
-		return self.access.collapse_files(virts)
+	#@property
+	#def virtuals(self):
+#		virts = self._cascade("virtuals")
+#		return self.access.collapse_files(virts)
 
 if __name__ == "__main__":
 	a=PortageProfile(FilePath("default/linux/amd64/2008.0",base_path="/var/git/portage-mini-2010/profiles"))

@@ -3,6 +3,50 @@ import commands
 
 class FilePath(object):
 
+	def grabfile(self):
+		# grabfile() is a simple helper method that grabs the contents
+		# of a typical portage configuration file, minus any lines
+		# beginning with "#", and returns each line as an item in a
+		# list. Newlines are stripped. This helper function looks at
+		# the repository base_path, not any overlays.  If a directory
+		# is specified, the contents of the directory are concatenated
+		# and returned.
+		out=[]	
+		if not self.exists():
+			return out
+		scan = set()
+		if self.isdir():
+			scan = scan | self.contents()
+		else:
+			scan.add(self)
+		for path in scan:
+			a=path.open("r")
+			for line in a:
+				if len(line) and line[0] != "#":
+					out.append(line[:-1])
+			a.close()
+		return out
+	
+	def open(self, mode):
+		return open(self.diskpath, mode)
+
+	def listdir(self):
+		return set(os.listdir(self.diskpath))
+
+	def generate(self,cls,repository,func = None,filter = None):
+		files = self.listdir()
+		if func:
+			files = map(func,files)
+		if filter:
+			files = files & filter
+		return set( cls(file,repository=repository) for file in files )
+
+	def exists(self):
+		return os.path.exists(self.diskpath)
+
+	def isdir(self):
+		return os.path.isdir(self.diskpath)
+
 	def __init__(self,path,base_path="/"):
 		self._path = path
 		self._base_path = base_path
@@ -48,7 +92,6 @@ class FilePath(object):
 		else:
 			return FilePath(self.diskpath[found:],base_path=self.diskpath[0:found])
 
-
 	def adjpath(self,change):
 
 		# This returns a new path -
@@ -62,63 +105,21 @@ class FilePath(object):
 		else:
 			return FilePath(os.path.normpath(os.path.join(self.path, change)),base_path=self.base_path)
 
-
-class FileAccessInterface(object):
-
-	def __init__(self,base_path):
-		self.base_path = os.path.realpath(base_path)
-	
-	def open(self,path, mode):
-		return open(path.diskpath, mode)
-
-	def listdir(self,path):
-		return os.listdir(path.diskpath)
-
-	def exists(self,path):
-		return os.path.exists(path.diskpath)
-
-	def isdir(self,path):
-		return os.path.isdir(path.diskpath)
-
-	def diskpath(self,path):
-		return os.path.normpath(path.diskpath)
-
-	def grabfile(self,path):
-		# grabfile() is a simple helper method that grabs the contents
-		# of a typical portage configuration file, minus any lines
-		# beginning with "#", and returns each line as an item in a
-		# list. Newlines are stripped. This helper function looks at
-		# the repository base_path, not any overlays.  If a directory
-		# is specified, the contents of the directory are concatenated
-		# and returned.
-		out=[]	
-		if not self.exists(path):
-			return out
-		if self.isdir(path):
-			scan = self.listdir(path)
-			scan = map(lambda(x): "%s/%s" % ( path, x ), scan )
-		else:
-			scan = [ path ]
-		for path in scan:
-			a=self.open(path,"r")
-			for line in a.readlines():
-				if len(line) and line[0] != "#":
-					out.append(line[:-1])
-			a.close()
-		return out
-
 	def collapse_files(self,paths):
 		pass
 		out = {}
 		for file in paths:
 			if self.exists(file):
 				f=self.open(file,"r")	
-				for line in f.readlines():
+				for line in f:
 					items = line.split()
 					if len(items) and item[0][0] != "#":
 						out[item[0]] = items[1:]
 				f.close()
 		return out
+
+
+"""
 
 class GitAccessInterface(FileAccessInterface):
 
@@ -129,7 +130,7 @@ class GitAccessInterface(FileAccessInterface):
 	def populate(self):
 		print commands.getoutput("cd %s; git ls-tree --name-only HEAD" % self.base_path)
 
-"""
+
 import subprocess
 from grp import getgrnam
 
