@@ -1,0 +1,368 @@
+#!/usr/bin/python2
+
+# Copyright 2010 Daniel Robbins, Funtoo Technologies, LLC.
+#
+# FUNTOO TECHNOLOGIES INTERNAL SOURCE CODE
+# ALPHA - DO NOT RELEASE - NOT FOR DISTRIBUTION
+#
+# The unauthorized reproduction or distribution of this copyrighted work is
+# illegal, and may result in civil or criminal liability.
+
+# NOTE: Keep the scope of this small so the import list can be minimized
+# and easily managed:
+
+import os
+
+import portage.versions
+
+from access import *
+
+# This module implements a simplified mechanism to access the contents of a
+# Portage tree. In addition, the PortageRepository class (see below) has
+# an elegant design that should support alternate Portage repository layouts
+# as well as alternate backend storage formats. An effort has been made to
+# keep things simple and extendable.
+
+class Category(object):
+
+	def __repr__(self):
+		return "Category(%s)" % self.atom
+
+	def __init__(self,atom,repository=None):
+		self.atom = atom
+		self._repository = repository 
+
+	def __eq__(self,other):
+		return self.atom == other.atom
+
+	def __hash__(self):
+		return hash(self.atom)
+
+	@property 
+	def repository(self):
+		return self._repository
+
+	@repository.setter
+	def repository(self,repository):
+		return Category(self.atom,repository=repository)
+
+class CatPkg(object):
+
+	# CatPkg is an object that is used to specify a particular group of
+	# ebuilds that is identified by a category and package name, such
+	# as "sys-apps/portage".
+
+	@property
+	def cat(self):
+		#i.e. "sys-apps"
+		return self.atom.split("/")[0]
+	
+	@property
+	def pkg(self):
+		#i.e. "portage"
+		return self.atom.split("/")[1]
+
+	@property
+	def p(self):
+		#i.e. "portage"
+		return self.pkg
+
+	def __repr__(self):
+		return "CatPkg(%s)" % self.atom
+
+	def __init__(self,atom,repository=None):
+		self.atom = atom
+		self.repository = repository
+
+	def __eq__(self, other):
+		return self.atom == other.atom
+
+	def __hash__(self):
+		return hash(self.atom)
+
+	def __getitem__(self,key):
+		
+		# This method allows properties to be grabbed using atom["cat"]
+		# as well as standard atom.cat. This comes in handy when expanding
+		# strings: 
+		#
+		# path = "%(cat)s/%(p)s" % atom
+
+		if hasattr(self,key):
+			return getattr(self,key)
+
+class PkgAtom(object):
+
+	# Our PkgAtom is different from a dependency, and literally means "a
+	# specific reference to an individual package". This package could be a
+	# specific ebuild in a Portage tree, or a specific record in
+	# /var/db/pkg indicating that the package is installed. An "PkgAtom"
+	# uniquely references one package without ambiguity. 
+	
+	# LOGICAL TEST OF AN ATOM: Two identical atoms cannot co-exist in a
+	# single repository. 
+
+	# LOGICAL TEST OF WHAT IS CONSIDERED ATOM DATA: Any data that can be
+	# used to specify a uniquely-existing package in a repository, that is
+	# capable of co-existing with other similar atoms, should be considered
+	# atom data. Otherwise, the data should not be considered atom data.
+	# Example: slots *are* part of an PkgAtom for repositories of installed or
+	# built packages, because foo/bar-1.0:slot=3 and foo/bar-1.0:slot=4 can
+	# co-exist in these repositories.
+
+	# So note that a package *slot* is considered part of the PkgAtom for
+	# packages that have already been installed or built. However, slot is
+	# *not* part of the PkgAtom for packages in a Portage tree, as the slot
+	# can be undefined at this point. For installed packages, the slot can
+	# be specified as follows:
+
+	# sys-apps/portage-2.2_rc67:slot=3
+	
+	# However, USE variables are not considered PkgAtom data for any type of
+	# repository because "foo/bar-1.0[gleep]" and "foo/bar-1.0[boing]"
+	# cannot co-exist independently in a Portage tree *or* installed
+	# package repository.
+
+	# The PkgAtom object provides a standard class for describing a package
+	# atom, in the abstract. Helper methods/properties are provided to
+	# access the atom's various attributes, such as package name, category,
+	# package version, revision, etc. The package atom is not tied to a
+	# particular Portage repository, and does not have an on-disk path. If
+	# you want an on-disk path for an PkgAtom, you'd create a new PkgAtom and
+	# pass it to the PortageRepository object and it will tell you.
+
+	# As touched on above, there is a text representation of an PkgAtom that
+	# is standardized, which is:
+
+	# <cat>/<p>{:key1=val1{:key2=val2...}}
+
+	# <cat> = category name
+	# <p> = full package name and version (including optional revision)
+	# :key=val = optional additional data in key=value format. values can
+	# consist of any printable character except a colon. Additional key
+	# values can be specified by appending another colon to the line,
+	# such as:
+
+	# sys-foo/bar-1.0:slot=1:python=2.6:keywords=foo,bar,oni
+
+	# (Although you wouldn't want to specify keywords in an PkgAtom as it
+	# wouldn't pass the LOGICAL TESTS above.)
+
+	def __hash__(self):
+		return hash(self.atom)
+
+	def __repr__(self):
+		return "PkgAtom(%s)" % self.atom
+
+	def __init__(self,atom,repository=None):
+		self.atom = atom
+		self.repository = repository
+		self._keysplit = None
+		self._keys = None
+		self._cpvs = None
+
+	def __getitem__(self,key):
+		
+		# This method allows properties to be grabbed using atom["cat"]
+		# as well as standard atom.cat. This comes in handy when expanding
+		# strings: 
+		#
+		# path = "%(cat)s/%(p)s" % atom
+
+		if hasattr(self,key):
+			return getattr(self,key)
+
+	@property
+	def keys(self):
+		
+		# Additional atomdata key/value pairs in dictionary format. These
+		# are created on initialization and you should not modify the
+		# keys property directly.
+
+		if self._keys == None:
+			self._keys = {}
+			for meta in self._keysplit[1:]:
+				key, val = meta.split("=",1)
+				self._keys[key] = val
+		return self._keys
+
+	@property
+	def cpvs(self):
+		# cpvs = "catpkgsplit string" and is used by other properties
+		if self._cpvs == None:
+			self._keysplit = self.atom.split(":")
+			self._cpvs = portage.versions.catpkgsplit(self._keysplit[0])
+		return self._cpvs
+	
+	@property
+	def cat(self):
+		#i.e. "sys-apps"
+		return self.atom.split("/")[0]
+	
+	@property
+	def pf(self):
+		#i.e. "portage-2.2_rc67-r1"
+		return self.atom.split("/")[1]
+	
+	@property
+	def p(self):
+		#i.e. "portage"
+		return self.cpvs[1]
+
+	@property
+	def pv(self):
+		#i.e. "2.2_rc67"
+		return self.cpvs[2]
+	
+	@property
+	def pr(self):
+		#i.e. "r1"
+		return self.cpvs[3]
+
+	def __eq__(self,other):
+		# We can only test for atom equality, but cannot otherwise compare them.
+		# PkgAtoms are equal when they reference the same unique cat/pkg and have
+		# the same key data.
+		return self.cpvs == other.cpvs and self.keys == other.keys
+
+class EClassAtom(str):
+	pass
+
+class Adapter(object):
+
+	def __init__(self,**args):
+		for arg in args.keys():
+			setattr(self,arg,args[arg])
+
+"""
+class AggregateCollection(Collection):
+
+	def __init__(self,children):
+		self.childen = children
+
+	def list(self):
+		atoms = set()
+		for child in self.children:
+			atoms = atoms | child.list()
+		return atoms
+
+	def has(self,key):
+		for child in self.children:
+			ref = child.has(key)
+			if ref:
+				return ref
+		return None
+
+class PkgAtomAdapter(object):
+	
+	def __init__(self,path):
+		self.path = path
+
+	def get(self,atomstr):
+		atom = PkgAtom(atomstr,repository=self.path.repository)
+		path = self.path.adjpath("%s/%s/%s.ebuild" % ( atom.cat, atom.p, atom.pf ))
+		if path.exists():
+			return atom
+
+	def list(self,atomstr):
+		cp = CatPkg(atomstr,repository=self.path.repository)
+		print cp
+		path = self.path.adjpath("%s/%s" % ( cp.cat, cp.pkg ))
+		print path
+		if path.isdir():
+			out = set()
+			for file in path.listdir():
+				out.add(PkgAtom("")
+			return path.generate(CatPkg)
+		return set()
+"""
+class CatPkgAdapter(object):
+	
+	def __init__(self,path,repository):
+		self.path = path
+		self.repository = repository
+
+
+	def match(self,key):
+		if key[-7:] == ".ebuild:"
+			return key[0
+
+	def exists(self,atom):
+		return self.path.adjpath("%s/%s" % ( atom.cat, atom.pkg )).isdir()
+
+	def list(self,atom):
+		return self.path.adjpath("%s" % ( atom.cat )).generate(PkgAtom,repository=self.repository,func = self.match)
+
+class CategoryAdapter(object):
+	
+	def __init__(self,path,repository):
+		self.path = path
+		self.repository = repository
+
+	def exists(self,atom):
+		return self.path.adjpath("%s" % ( atom.cat, atom.pkg )).isdir()
+
+	def list(self):
+		return self.path.generate(Category,repository=self.repository)
+
+class ValidAdapter(object):
+
+	def __init__(self,child,vfunc):
+		self.child = child
+		self.vfunc = vfunc
+		self._valid = None
+
+	@property
+	def valid(self):
+		if self._valid == None:
+			self._valid = vfunc()
+		return self._valid
+
+	def exists(self,atom):
+		got = self.child.exists(atom)
+		if got and got in self.valid:
+			return got
+	
+	def list(self):
+		return self.child.list() & self.valid
+
+
+class PortageRepository(object):
+
+	def __init__(self,path):
+		
+		self.path = FilePath("",base_path=path)
+		self.objects = {}
+		self.objects[Category] = CategoryAdapter(self.path,self)
+		self.objects[Category] = ValidAdapter(self.objects[Category], lambda: set(self.path.adjpath("profiles/categories").grabfile()))
+		self.objects[CatPkg] = CatPkgAdapter(self.path,self)	
+		
+	def exists(self,cls,atom):
+		return self.objects[cls].exists(atom)
+
+	def list(self,cls,atom=None):
+		return self.objects[cls].list(atom)
+
+
+if __name__ == "__main__":
+	a = PkgAtom("sys-apps/portage-2.2_rc67-r2")
+	b = PkgAtom("sys-apps/portage-2.2_rc67-r3")
+	print a
+	print repr(a)
+	print type(a)
+	print b
+	print type(b)
+	c=[a,b]
+	print c
+	for x in c:
+		print x
+	print
+	print a,"==",b,":", a == b
+	c = PkgAtom("sys-apps/portage-2.2_rc67-r2:slot=3:python=2")
+	d = PkgAtom("sys-apps/portage-2.2_rc67-r2:python=2:slot=3")
+	print c,"==",d,":", c == d
+
+	a = PortageRepository("/var/git/portage-mini-2010")
+	#print a.exists(PkgAtom,PkgAtom("sys-apps/portage-2.2_rc67-r2"))
+	print a.list(CatPkg,CatPkg("sys-apps/portage"))
+
