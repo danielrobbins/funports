@@ -1,0 +1,153 @@
+A change worth implementing is one for which the effort required for implementation can be justified based on the new possibilities afforded to users.
+
+- contents could be metadata or ebuilds...
+- profiles should be considered a repo-in-repo
+- metadata should be considered a repo-in-repo
+
+
+contents: {
+	"/", { type: "ebuild", "format" : "pms-0" },
+	"/profiles", { type: "profiles", "format" : "pms-0" },
+	"/metadata/cache", { type: "cache", "format", "pms-0" },
+	"/metadata/news"
+
+contents: {
+	ebuild : { path : "/", format: "pms-0", caps: [ "mini-manifest", "eclass" ] },
+	profiles: { path : "/profiles", format: "pms-0" caps: [ "dirext" ] },
+	cache: { path : "/metadata/cache", format: "pms-0" },
+	news : { path : "/metadata/news", format: "pms-0" },
+	licenses: { path : "/licenses", format: "pms-0" },
+	advisories: { path: "/metadata/glsa", format: "pms-0" }
+}
+
+
+globals: {
+	masters:	null
+}
+
+contents: {
+	defaults: {
+			format: "pms-0"
+	}
+
+	catpkg : { 
+			local : "/%(cat)s/%(pkg)s", 
+			format: "classic", 
+			caps: [ "mini-manifest", "eclass" ] ,
+			provide: [
+				"ChangeLog",
+				"metadata.xml"
+			],
+			default_eapi: 0
+	},
+	eclass: {
+			local : "/eclass"
+	},
+	profiles: { 
+			path : "/profiles", 
+			caps: [ "dirext" ] 
+	},
+	cache: { 
+			path : "/metadata/cache", 
+			provide: [
+				"meta/*"
+			]
+	},
+	news : { 
+			path : "/metadata/news", 
+	},
+	licenses: { 
+			path : "/licenses", 
+	},
+	advisories: { 
+			path: "/metadata/glsa", 
+	}
+}
+
+
+/* multiple remote heads: JSON HEADfake protocol */
+
+contents: <sha1> (of contents file, any changes of location) 
+
+head: {
+	catpkg: <sha1>,
+	cache: { "core: : <sha1>,
+		 "desc" : <sha1>,
+	       },
+	news: <sha1>,
+	licenses: <sha1>,
+	advisories: <sha1>
+}
+
+stable: {
+	catpkg: <sha1>,
+	cache: { "core" : <sha1>,
+		 "desc" : <sha1>,
+		},
+	news: <sha1>,
+	licenses: <sha1>,
+	advisories: <sha1>
+}
+
+<signature>
+
+/* contents file: */
+
+contents: {
+	catpkg : { 	
+			remote : "http://pkg.funtoo.org/%(repo)s/%(cat)s/%(pkg)s", 
+			protocol: "HTTP-REST/bundle-1.0", 
+			caps: [ "mini-manifest" ], 
+			provide:  [ 
+				"eclass", 
+				"ChangeLog",
+				"metadata.xml"
+			],
+			default_eapi: 0,
+	},
+	profiles: { 
+			local: "/profiles", 
+			format: "gentoo/profile-1.0",
+			caps: [ "dirext" ],
+			default_eapi: 0,
+	},
+	cache: {
+		core: { 
+			remote: "http://pkg.funtoo.org/%(repo)s/sqlite/core.sqlite" ,
+			protocol: "changeset-slurry",
+			format: "funtoo/sqlite-1.0:pkgs",
+			provide: [ 
+					"meta/DEPEND", 
+					"meta/RDEPEND", 
+					"meta/LICENSE", 
+					"meta/EAPI", 
+					"meta/IUSE", 
+					"meta/KEYWORDS", 
+					"meta/PROVIDE", 
+					"meta/SLOT", 
+					"meta/RESTRICT", 
+					"meta/SRC_URI"
+				],
+		},
+		desc: {
+			remote: "http://pkg.funtoo.org/%(repo)s/sqlite/desc.sqlite",
+			format: "funtoo/sqlite-1.0:desc",
+			provide: [ 
+					"meta/DESCRIPTION", 
+					"meta/HOMEPAGE" 
+				]
+		}
+	}
+	news : { 
+			remote: "http://pkg.funtoo.org/%(repo)s/news/%(news)s", 
+			protocol: "HTTP-REST/raw-1.0"
+	},
+	licenses: { 
+			remote: "http://pkg.funtoo.org/%(repo)s/licenses/%(license)s", 
+			protocol: "HTTP-REST/raw-1.0"
+	},
+	advisories: { 	
+			remote: "http://pkg.funtoo.org/%(repo)s/advisories/%(advisory)s", 
+			protocol: "HTTP-REST/raw-1.0",
+	}
+}
