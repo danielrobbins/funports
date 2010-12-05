@@ -33,9 +33,8 @@ class PluginPhaseAdapter(PluginAdapter):
 
 class PluginHook(object):
 
-	def __init__(self,target_root,settings):
-		self.target_root = target_root
-		self.settings = settings
+	def __init__(self):
+		pass
 
 	def needsToRun(self):
 		return True
@@ -44,7 +43,94 @@ class PluginHook(object):
 		print( "HI!")
 		return True
 
-class ConfigFilePluginHook(object):
+import portage.util
+from portage.util import shlex_split
+from portage.output import colorize
+from portage.output import blue, bold, colorize, create_color_func, darkgreen, red, yellow
+
+class EtcConfigPlugin(PluginHook):
+
+	def needsToRun(self):
+		return True
+
+	def run(self):
+		config_protect = shlex_split(settings.get("CONFIG_PROTECT", ""))
+		self.chk_updated_cfg_files(settings["EROOT"], config_protect)
+	
+	def chk_updated_cfg_files(self, eroot, config_protect):
+		target_root = eroot
+		result = list(portage.util.find_updated_config_files(target_root, config_protect))
+
+		print("DEBUG: scanning /etc for config files....")
+
+		for x in result:
+			print("\n"+colorize("WARN", " * IMPORTANT:"), end=' ')
+			if not x[1]: # it's a protected file
+				print("config file '%s' needs updating." % x[0])
+			else: # it's a protected dir
+				print("%d config files in '%s' need updating." % (len(x[1]), x[0]))
+	
+		if result:
+			print(" "+yellow("*")+" See the "+colorize("INFORM","CONFIGURATION FILES")\
+					+ " section of the " + bold("emerge"))
+			print(" "+yellow("*")+" man page to learn how to update config files.")
+
+	def find_updated_config_files(target_root, config_protect):
+		"""
+		Return a tuple of configuration files that needs to be updated.
+		The tuple contains lists organized like this:
+		[ protected_dir, file_list ]
+		If the protected config isn't a protected_dir but a procted_file, list is:
+		[ protected_file, None ]
+		If no configuration files needs to be updated, None is returned
+		"""
+	
+		os = _os_merge
+	
+		if config_protect:
+			# directories with some protect files in them
+			for x in config_protect:
+				files = []
+	
+				x = os.path.join(target_root, x.lstrip(os.path.sep))
+				if not os.access(x, os.W_OK):
+					continue
+				try:
+					mymode = os.lstat(x).st_mode
+				except OSError:
+					continue
+	
+				if stat.S_ISLNK(mymode):
+					# We want to treat it like a directory if it
+					# is a symlink to an existing directory.
+					try:
+						real_mode = os.stat(x).st_mode
+						if stat.S_ISDIR(real_mode):
+							mymode = real_mode
+					except OSError:
+						pass
+	
+				if stat.S_ISDIR(mymode):
+					mycommand = \
+						"find '%s' -name '.*' -type d -prune -o -name '._cfg????_*'" % x
+				else:
+					mycommand = "find '%s' -maxdepth 1 -name '._cfg????_%s'" % \
+							os.path.split(x.rstrip(os.path.sep))
+				mycommand += " ! -name '.*~' ! -iname '.*.bak' -print0"
+				a = subprocess_getstatusoutput(mycommand)
+	
+				if a[0] == 0:
+					files = a[1].split('\0')
+					# split always produces an empty string as the last element
+					if files and not files[-1]:
+						del files[-1]
+					if files:
+						if stat.S_ISDIR(mymode):
+							yield (x, files)
+						else:
+							yield (x, None)
+
+class InfoPlugin(PluginHook):
 
 	def needsToRun(self):
 		return "noinfo" not in self.settings.features
@@ -163,81 +249,13 @@ class ConfigFilePluginHook(object):
 				else:
 					if icount > 0:
 						out.einfo("Processed %d info files." % (icount,))
-	
-	def chk_updated_cfg_files(eroot, config_protect):
-		target_root = eroot
-		result = list(
-			portage.util.find_updated_config_files(target_root, config_protect))
-	
-		for x in result:
-			print("\n"+colorize("WARN", " * IMPORTANT:"), end=' ')
-			if not x[1]: # it's a protected file
-				print("config file '%s' needs updating." % x[0])
-			else: # it's a protected dir
-				print("%d config files in '%s' need updating." % (len(x[1]), x[0]))
-	
-		if result:
-			print(" "+yellow("*")+" See the "+colorize("INFORM","CONFIGURATION FILES")\
-					+ " section of the " + bold("emerge"))
-			print(" "+yellow("*")+" man page to learn how to update config files.")
-
-	def find_updated_config_files(target_root, config_protect):
-		"""
-		Return a tuple of configuration files that needs to be updated.
-		The tuple contains lists organized like this:
-		[ protected_dir, file_list ]
-		If the protected config isn't a protected_dir but a procted_file, list is:
-		[ protected_file, None ]
-		If no configuration files needs to be updated, None is returned
-		"""
-	
-		os = _os_merge
-	
-		if config_protect:
-			# directories with some protect files in them
-			for x in config_protect:
-				files = []
-	
-				x = os.path.join(target_root, x.lstrip(os.path.sep))
-				if not os.access(x, os.W_OK):
-					continue
-				try:
-					mymode = os.lstat(x).st_mode
-				except OSError:
-					continue
-	
-				if stat.S_ISLNK(mymode):
-					# We want to treat it like a directory if it
-					# is a symlink to an existing directory.
-					try:
-						real_mode = os.stat(x).st_mode
-						if stat.S_ISDIR(real_mode):
-							mymode = real_mode
-					except OSError:
-						pass
-	
-				if stat.S_ISDIR(mymode):
-					mycommand = \
-						"find '%s' -name '.*' -type d -prune -o -name '._cfg????_*'" % x
-				else:
-					mycommand = "find '%s' -maxdepth 1 -name '._cfg????_%s'" % \
-							os.path.split(x.rstrip(os.path.sep))
-				mycommand += " ! -name '.*~' ! -iname '.*.bak' -print0"
-				a = subprocess_getstatusoutput(mycommand)
-	
-				if a[0] == 0:
-					files = a[1].split('\0')
-					# split always produces an empty string as the last element
-					if files and not files[-1]:
-						del files[-1]
-					if files:
-						if stat.S_ISDIR(mymode):
-							yield (x, files)
-						else:
-							yield (x, None)
 settings, trees, mtimedb = load_emerge_config()
 x=PluginPhaseAdapter("/", settings, trees, mtimedb)
-a=ConfigFilePluginHook()
+a=InfoPlugin()
+b=EtcConfigPlugin()
 x.configure(a)
+x.configure(b)
 print(a.needsToRun())
 print(a.run())
+print(b.needsToRun())
+print(b.run())
