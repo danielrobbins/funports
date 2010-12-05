@@ -249,13 +249,15 @@ class InfoPlugin(PluginHook):
 				else:
 					if icount > 0:
 						out.einfo("Processed %d info files." % (icount,))
-settings, trees, mtimedb = load_emerge_config()
-x=PluginPhaseAdapter("/", settings, trees, mtimedb)
-a=InfoPlugin()
-b=EtcConfigPlugin()
-x.configure(a)
-x.configure(b)
-print(a.needsToRun())
-print(a.run())
-print(b.needsToRun())
-print(b.run())
+
+if __name__ == "__main__":
+	settings, trees, mtimedb = load_emerge_config()
+	x=PluginPhaseAdapter("/", settings, trees, mtimedb)
+	a=InfoPlugin()
+	b=EtcConfigPlugin()
+	x.configure(a)
+	x.configure(b)
+	print(a.needsToRun())
+	print(a.run())
+	print(b.needsToRun())
+	print(b.run())
