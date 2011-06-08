@@ -1,0 +1,345 @@
+GLEP: 62
+Title: repository format versioning
+Version: $Revision: 1.12 $
+Last-Modified: $Date: 2010/08/08 06:05:32 $
+Author: Brian Harring <ferringb@gentoo.org>
+Status: Draft
+Type: Standards Track
+Content-Type: text/x-rst
+Created: 31-May-2003
+Post-History: 
+
+Abstract
+========
+
+The issues described herein have been known for a long while- the purpose of this glep is to
+codify an agreed to standard for gentoo rather than having people implement their own random bits,
+or incompatibly extend an existing format in a fashion that cannot be detected cleanly.
+
+For all intents and purposes, package managers basically are stuck assuming that
+there is one, and only one type of repository format- that which is defined in pms.
+The reality is that there is at least two formats- PMS, and that a set of extensions portage
+supports beyond PMS.
+
+The problem is that there is no way to detect the format of a repository- this leaves
+the PM with either the option of being PMS compliant (and breaking when it encounters portage
+extensions), or supporting the latest/greatest portage format, which is itself unversioned.
+
+This situation sucks.  Being locked to just PMS is a stranglehold on experimentation, and
+enabling portage repository enhancements for all repo's destroys the compatibility intentions
+of PMS repo's.
+
+Beyond that, lack of any real format markings means that truly the PMS format is locked in stone
+indefinitely with no clean way to push out new functionality.
+
+
+Paludis/exherbo's Existing implementations
+==========================================
+
+For the purpose of noting what's currently out there, this section covers exherbo/paludis implementation.  If people
+decide that Gentoo should import it wholesale than this text shall serve as the specification.
+
+Paludis/exherbo currently support a file named metadata/layout.conf that is composed of key=value pairs. 
+For all non-PMS repositories, it shall be required to exist.
+
+Paludis Specification
+---------------------
+
+.. list-table:: key/value pairs
+ :header-rows: 1
+
+ * - key
+   - value description
+   - exherbo default
+   - paludis's defined gentoo default
+   - notes
+ * - ``layout``
+   - name of the repository format, a PMS repository is ``traditional`` for example
+   - ``exheres``
+   - ``traditional``
+   - ``traditional`` is the name paludis choose for a PMS defined repository.  While the naming
+     sucks, that's what's there.
+     
+     Portage's varation should be named ``portage-0``.
+ * - ``profile_layout``
+   - the format of the profile, ``pms-0`` for the current PMS defined format.
+   - ``exheres-0``
+   - ``traditional``
+   - ``traditional`` is the name used for the current PMS defined profile format.
+ * - ``eapi_when_unknown``
+   - the default EAPI to assume for any pkg, cache or any non-profile EAPI aware metadata that doesn't explicitly state it's EAPI.
+     An ebuild that doesn't state an EAPI, would inherit this setting for example.
+   - ``exheres-0``
+   - ``0``, aka EAPI 0
+   - Usage of this setting with a ``traditional`` repository format is incompatible with PMS; the PMS standard is
+     ``0``, but this would allow a repo to choose ``1`` while being read the same on disk.
+ * - ``eapi_when_unspecified``
+   - This is a redundant setting; eapi_when_unknown is always the same in practice.
+   - ``exheres-0``
+   - ``0``, aka EAPI 0
+   - 
+ * - ``profile_eapi_when_unspecified``
+   - The EAPI to assume if a profile node doesn't specify it's EAPI.
+   - ``exheres-0``
+   - ``0``
+   - The gentoo setting is actually backwards incompatible with PMS- PMS states that for a profile without a specified default,
+     ``0`` is used.  Allowing repositories to arbitrarily set the default while using a ``traditional`` profile format
+     isn't backwards compatible with PMS.
+ * - ``masters``
+   - An ordered, space delimited list of the repository id that this repository consumes from.  Specifically,
+     it can use eclasses, profiles, use definitions/descriptions (global option descriptions in exhebro terminology,
+     use.desc and USE_EXPAND desc/* targets in gentoo terminology).  From these parents.  If the repository doesn't specify any masters,
+     it is strictly standalone and self contained (although not required that it's deps be self contained to the
+     repository)
+   - empty string
+   - empty string
+   - default is no masters
+
+Please note that there are quite a few more options that are controllable- the glep author is just enumerating the
+core ones.  Some examples of options are controlling news, sets, profiles, etc.  Dig through the implementation for
+the specifics.
+
+
+Flaws
+-----
+
+The critical flaw to this format is it's usage of default values that are dependant on the distribution.  Literally
+the python project's overlay if accessed from a gentoo box would be treated as-
+
+::
+
+ layout = traditional
+ profile_layout = traditional
+ eapi_when_unknown = 0
+ eapi_when_unspecified = 0
+ profile_eapi = 0
+ masters =
+
+And, if that same repository were accessed under exherbo,
+
+::
+
+ layout = exheres
+ profile_layout = exheres
+ eapi_when_unknown = exheres-0
+ eapi_when_unspecified = exheres-0
+ profile_eapi = 0
+ masters =
+
+This problem compounds when you consider that unlike exherbo, gentoo has several large and active derivatives- funtoo, sabayon, and chrome-os.
+For the gentoo derivatives, if the default was left to the distribution it would result in the same issue- if sabayon's defaults
+were ``eapi_when_unknown = 1``, the python overlay would be interpretted grossly differently, and be non functional.
+
+The reality is, if gentoo adopts metadata/layout.conf defaults cannot be relied on and each repository must specify those values.  However
+if reusing this format, we would have to support the defaults that already exist- meaning the issue doesn't go away, we can just
+set policy to make it less of an issue for gentoo repositories.  A user daftly grabbing an exherbo repository and trying to use
+it in gentoo however still would get the defaults, and would very quickly see some very unfriendly complaints from the package manager.
+
+Ignoring the distro specific angle, the implementation is such that a new repository format cannot specify it's own defaults; the
+defaults are set at the distro level.  This basically is a further reason defaults cannot be relied upon.
+
+An additional non-technical concern of reusing the support is purely that gentoo becomes bound to an external entity- compatibility would have to
+be maintained on both sides, despite the fact the two sides have a bit of a history of doing otherwise.
+
+Finally, and it's minor but stating it for completeness, the redundancy is pointless and the naming isn't grand (``traditional``
+is a lot less specific than ``pms-0`` for example).
+
+
+A proposal for Gentoo and it's derivatives
+==========================================
+
+If it's decided the pre-existing paludis implementation should not be adopted, a similar albeit simplified proposal
+is put forth.  Finally, this proposal intentionally removes distribution semantics from it, transferring control of
+defaults to the repository specification while requiring a common subset of keys so that the PM can do format
+identification and setup steps.
+
+Required regardless of repository format
+----------------------------------------
+
+A file composed of key/value pairs shall be required for all non-PMS repositories at metadata/repo.conf.  Note that
+the core required keys are intentionally left simple.
+
+.. list-table:: required keys
+ :header-rows: 1
+
+ * - key name
+   - description of value
+   - default if the file, or value is unset
+   - notes
+ * - ``type``
+   - the repository format name, literally the `type` this repository is.
+   - ``pms-0``
+   - ``pms-0`` is the literal current PMS definition of a repository format.
+ * - ``parents``
+   - An ordered list of repository ID's that this repository requires to be used.  The exact details
+     of what is actually usable from the parent is intentionally left to the repository format specification.
+   - empty string (none)
+   - Note that if a repository specifies ``parents``, system/user configuration can override this list-
+     this is just the default requirement.  If the consumer of the repository prefers a different set of
+     parents, this is their option (and maintenance responsibility).
+
+
+Note that this is essentially the required stub for any derivative formats; further, repositories may
+bundle a gpg detached signature of repo.conf at ``metadata/repo.conf.asc``.  The reason for this is
+purely that a man in the middle attack could conceivably be executed to change a settings used
+in metadata/repo.conf.  While it may be viewed as paranoid, consider a format that specifies the default
+EAPI- if the default was supposed to be 2 (meaning pkg_prepare is usable, which is where patching should occur),
+but was shifted to 1, patching would be skipped.  It's not hard to conceive one of those patches being security
+related.
+
+The mechanism for distributing the signing key is outside of this GLEPs scoping- it's however required that
+if such signing occurs the detached signature be placed at meatdata/repo.conf.asc, and that PM's do not
+consider the existance of such a file (even if they may not support gpg validation) a QA issue.
+
+
+``pms-0`` repository format specification
+-----------------------------------------
+
+A ``pms-0`` repository is literally a locked down format matching PMS specification.  For exact details,
+please look through PMS; the core things to note is that things like package.mask as a directory are
+disallowed.  Please note that this specification allows for a couple of things that are outside of PMS-
+PMS doesn't cover the existance of GLSA's for example.
+
+The following table details the keys available for this specific format.
+
+.. list-table:: key/value pair meanings
+ :header-rows: 1
+ 
+ * - key name
+   - description of value
+   - default
+   - notes
+ * - ``capabilities``
+   - A whitespace delimited list of what this repository bundles beyond ebuilds and eclasses.  This is
+     a list of *optional* capabilities- a PM isn't required to support these to use this repository.
+     As such, no capability can be added that irrevocably changes the default interpretation of this
+     repository format.
+   - no default capabilities
+   - Valid capabilities are:
+
+     + ``glsas``
+     + ``profiles``: meaning it carries actual profiles, not just a `profiles/package.mask`
+     + ``cache``: if set, a PMS compliant flat_list cache is bundled.  Note that this
+       capability is not usable if ``parents`` is specified [1]_
+     + ``news``: glep42 news is bundled in metadata/news
+ * - ``parents``
+   - same rules as the raw metadata/repo.conf
+   - same rules as the raw metadata/repo.conf
+   - Note that this is purely informational- due to it being PMS derived, the repository cannot
+     force usage of eclasses from the parent repository.
+
+     Essentially, it's a castrated value; user configuration has to force eclass stacking on it's
+     own.
+
+
+For example, gentoo-x86 (a PMS compliant repository) would have the following metadata/repo.conf::
+
+ type = pms-0
+ capabilties = glsa profiles cache news
+
+And your average overlay that is striving for PMS compliance would be::
+
+ type = pms-0
+ parents = gentoo
+
+Note that consumers of that repository would still have to manually configure their eclass stacking
+so that this repository can use eclasses from the gentoo repository.  While this sucks, this is done
+to keep backwards compatibility.  Effectively this format definition is just informational- it's
+of limited value, but it matches the agreed to standards.
+
+
+``portage-0`` repository format specification
+---------------------------------------------
+
+Please note this is an approximation of portage's current extensions to repositories; please note
+it's entirely possible the author overlooked an extension, as such this is just a starter list that
+will be finalized at the time of acceptance (if accepted).
+
+Finally, note that this format is directly derived from ``pms-0``, as such it supports the ``capabilities``
+key
+
+.. list-table:: key/value pair meanings
+ :header-rows: 1
+
+ * - key name
+   - description of value
+   - default
+   - notes
+ * - capabilities
+   - derived from ``pms-0``
+   - no default capabilities
+   - in addition to ``pms-0`` capabilities, the following are available:
+
+     + ``sets``: portage 2.2 $REPOSITORY_ROOT/sets.conf
+     + ``manifests``: whether or not this repository carries manifest information
+     + ``hash-cache``: portage actually supports two forms of caches for metadata/cache; flat_list,
+       and flat_hash; flat_hash is a key=val form of cache, critically that carries eclass verification
+       data- timestamps that can be relied on for validation across overlays.
+
+ * - parents
+   - derived from ``pms-0``
+   - no default parent
+   - The reusable components from the parent repository is purely it's eclasses.  While this is
+     restrictive, this also avoids embracing/extending the PMS definition as much as possible.
+
+     Finally note that any package.mask's that are specified, are treated as overrides of the
+     PM's selected profile; this is done to match older portage semantics.  Further, USE_EXPAND
+     definitions are inherited from said profile.
+
+For the ondisk definition of ``portage-0``, the following extensions to ``pms-0`` apply:
+
+* Within the profiles, package.*, and use.* can be a directory.  They are processed
+  in an unsorted ordering, and effectively are collapsed down into a single file.  This means
+  repository authors cannot use incremental behaviour w/in that specific directory- for a profile
+  node foo, foo/package.mask/mask_list2 cannot try to reverse something foo/package.mask/mask_list2
+  sets.
+* ...add more as they're identified (they're there, gurantee that).
+
+Finally, there is an open question as to whether or not portage's current support for reading
+the masters key out of metadata/layout.conf should be supported- as indicated in the analysis
+of metadata/layout.conf, there are issues with supporting that format.
+
+That said, portage has had support for masters from metadata/layout.conf for roughly a year now.  There
+is an open question on how to proceed here.
+
+
+Alternative formats
+-------------------
+
+This is left open to developers; proposals are welcome, although they belong in seperate gleps.
+
+
+Backwards compatibility
+-----------------------
+
+The reality is that portage has the lion's share of users; all current versions of portage automatically
+use a variation of ``portage-0`` format for all repositories, including the gentoo repository (also known as
+gentoo-x86, the core gentoo repository that is actually ``pms-0`` format).
+
+Obviously, pkgcore and paludis are slightly screwed by this- but their userbase also by nature of their usage
+appear to keep a fair bit more up to date than some of the portage users the author has seen over the years.  Alternatively
+phrased, being the author of pkgcore I cannot think of a single instance where a user has shown up running a year or
+two old version of pkgcore.  It's an assumption, but paludis is likely quite similar.
+
+Summarizing, pkgcore/paludis users are already screwed over by the unstated ``portage-0`` usage in overlays- any users
+of those PMs are already running into issues with mainline overlays, as such deployment of this proposal for those
+PMs isn't an issue.  It's safe to assume that uptake of support will be pretty quick.
+
+Portage however, does have users who show up running portage versions a year or two old- primarily it's userbase
+is large enough there is the usual concern of deploying this functionality, and having to wait for people to use it.
+
+As such, a pragmatic solution is proposed- overlays are able to use ``portage-0`` now.  The fact of the matter is that
+they do already, so it'snot exactly outlawable (and no amount of citing  PMS will change that fact).
+The Portage team has agreed to disable all ``portage-0`` support in repositories that don't specifically
+mark themselves as such, but obviously there is a transition period required to let overlay developers do the necessary
+changes.
+
+Realistically, a few months time ought to be enough- worst case, a year.  After that period is over, portage flips
+the switch requiring the repository state it's format; no stated format, it's treated as a ``pms-0`` format.
+
+
+.. [1] The reason for this is that the required cache format, flat_list, doesn't bundle enough
+   information for it to be possible to validate the cache entries in such an overlay setup.  Specifically,
+   the eclass times aren't stored in the cache.  As such, the current flat_list implementation isn't usable
+   here- if it grew an explicit listing of the eclass chksums in the cache, this would be a different
+   story however.

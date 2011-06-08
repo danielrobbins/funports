@@ -1,0 +1,3 @@
+This is a generic extensions implementation for Portage that will allow things like an etc-update check or GNU info regen to be modular, and 
+allow us to have emerge do other things after it runs. (or before)
+
